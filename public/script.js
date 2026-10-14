@@ -8,70 +8,182 @@ const cancelButton = document.querySelector('#cancel-button');
 const formTitle = document.querySelector('#form-title');
 const message = document.querySelector('#message');
 
-const STORAGE_KEY = 'workshop-projects-v1';
-
 let projects = [];
 let editingId = null;
-let storageReady = false;
+let isBusy = false;
+let hasLoadedSuccessfully = false;
 
+const validStatuses = ['Planned', 'In Progress', 'Completed'];
+
+// Validate the collection returned by the API.
 function isValidProjects(value) {
-    return Array.isArray(value) && value.every(project =>
-        project !== null &&
-        typeof project === 'object' &&
-        !Array.isArray(project) &&
-        typeof project.id === 'string' &&
-        project.id.length > 0 &&
-        typeof project.name === 'string' &&
-        project.name.trim().length > 0 &&
-        typeof project.status === 'string' &&
-        ['Planned', 'In Progress', 'Completed'].includes(project.status)
-    ) && new Set(value.map(project => project.id)).size === value.length;
-}
+    if (!Array.isArray(value)) {
+        return false;
+    }
 
-function loadProjects() {
-    try {
-        const storedText = localStorage.getItem(STORAGE_KEY);
+    const seenIds = new Set();
 
-        if (storedText === null) {
-            projects = [];
-            storageReady = true;
-            return true;
-        }
-
-        const storedProjects = JSON.parse(storedText);
-
-        if (!isValidProjects(storedProjects)) {
-            message.textContent =
-                'Saved project data is invalid. Your stored data has not been overwritten.';
-            storageReady = false;
+    return value.every(project => {
+        if (
+            project === null ||
+            typeof project !== 'object' ||
+            Array.isArray(project)
+        ) {
             return false;
         }
 
-        projects = storedProjects;
-        storageReady = true;
+        const validId =
+            (typeof project.id === 'number' &&
+                Number.isSafeInteger(project.id) &&
+                project.id > 0) ||
+            (typeof project.id === 'string' &&
+                project.id.trim() !== '');
+
+        if (
+            !validId ||
+            typeof project.name !== 'string' ||
+            project.name.trim() === '' ||
+            project.name.length > 80 ||
+            typeof project.status !== 'string' ||
+            !validStatuses.includes(project.status)
+        ) {
+            return false;
+        }
+
+        const idKey = String(project.id);
+
+        if (seenIds.has(idKey)) {
+            return false;
+        }
+
+        seenIds.add(idKey);
         return true;
-    } catch (error) {
-        message.textContent =
-            'Could not read saved projects. Check browser storage permissions. Existing stored data has not been intentionally changed.';
-        storageReady = false;
-        return false;
-    }
+    });
 }
 
-function saveProjects() {
+// Read a useful error message from an unsuccessful API response.
+async function getApiErrorMessage(response) {
     try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
-        message.textContent = '';
-        return true;
+        const data = await response.json();
+
+        if (typeof data.error === 'string' && data.error.trim()) {
+            return data.error;
+        }
+
+        if (typeof data.message === 'string' && data.message.trim()) {
+            return data.message;
+        }
+    } catch {
+        // The response may not contain JSON.
+    }
+
+    return `Request failed (${response.status}${response.statusText
+        ? ` ${response.statusText}`
+        : ''
+        }).`;
+}
+
+// Send a request and check the HTTP response.
+async function apiRequest(url, options = {}) {
+    let response;
+
+    try {
+        response = await fetch(url, options);
+    } catch {
+        throw new Error(
+            'Could not connect to the server. Check that your Express server is running and try again.'
+        );
+    }
+
+    if (!response.ok) {
+        throw new Error(await getApiErrorMessage(response));
+    }
+
+    return response;
+}
+
+// Disable editing controls while loading or saving.
+function updateControls() {
+    const disabled = isBusy || !hasLoadedSuccessfully;
+
+    nameInput.disabled = disabled;
+    statusInput.disabled = disabled;
+    saveButton.disabled = disabled;
+    cancelButton.disabled = isBusy;
+
+    projectList.querySelectorAll('button').forEach(button => {
+        button.disabled = disabled;
+    });
+}
+
+// Load the latest collection from the API.
+// A failed load is never treated as an empty collection.
+async function loadProjects({
+    successMessage = '',
+    afterMutation = false
+} = {}) {
+    hasLoadedSuccessfully = false;
+    isBusy = true;
+
+    updateControls();
+    emptyState.hidden = true;
+
+    message.textContent = afterMutation
+        ? 'Refreshing projects...'
+        : 'Loading projects...';
+
+    try {
+        const response = await apiRequest('/api/projects');
+
+        let data;
+
+        try {
+            data = await response.json();
+        } catch {
+            throw new Error('The server returned an invalid JSON response.');
+        }
+
+        if (!isValidProjects(data)) {
+            throw new Error(
+                'The server returned an invalid project list. Please check the API response.'
+            );
+        }
+
+        // Use the server collection as the source of truth.
+        projects = data;
+        hasLoadedSuccessfully = true;
+
+        renderProjects();
+
+        if (successMessage) {
+            message.textContent = successMessage;
+        } else if (projects.length > 0) {
+            message.textContent = 'Projects loaded successfully.';
+        } else {
+            message.textContent = '';
+        }
     } catch (error) {
-        message.textContent =
-            'Changes could not be saved to browser storage. Your latest changes may be lost if you refresh.';
-        return false;
+        // Do not show the empty state when loading failed.
+        hasLoadedSuccessfully = false;
+        emptyState.hidden = true;
+
+        if (afterMutation) {
+            message.textContent =
+                `${successMessage} However, the project list could not be refreshed. ` +
+                error.message;
+        } else {
+            message.textContent =
+                `Could not load projects. ${error.message}`;
+        }
+    } finally {
+        isBusy = false;
+        updateControls();
     }
 }
 
+// Render API records safely using textContent.
 function renderProjects() {
-    projectList.textContent = '';
+    projectList.replaceChildren();
 
     projects.forEach(project => {
         const listItem = document.createElement('li');
@@ -87,6 +199,11 @@ function renderProjects() {
         editButton.textContent = 'Edit';
 
         editButton.addEventListener('click', () => {
+            if (isBusy || !hasLoadedSuccessfully) {
+                return;
+            }
+
+            // Keep the ID returned by the server.
             editingId = project.id;
 
             nameInput.value = project.name;
@@ -95,10 +212,7 @@ function renderProjects() {
             saveButton.textContent = 'Save changes';
             cancelButton.hidden = false;
             formTitle.textContent = 'Edit Project';
-
-            if (storageReady) {
-                message.textContent = '';
-            }
+            message.textContent = '';
 
             nameInput.focus();
         });
@@ -106,74 +220,44 @@ function renderProjects() {
         deleteButton.type = 'button';
         deleteButton.textContent = 'Delete';
 
-        deleteButton.addEventListener('click', () => {
+        deleteButton.addEventListener('click', async () => {
+            if (isBusy || !hasLoadedSuccessfully) {
+                return;
+            }
+
             const confirmed = window.confirm(
                 `Are you sure you want to delete "${project.name}"?`
             );
 
+            // Cancelled deletion sends no request.
             if (!confirmed) {
                 return;
             }
 
-            if (!storageReady) {
-                message.textContent =
-                    'Deletion is disabled because saved project data could not be loaded safely.';
-                return;
-            }
-
-            const projectIndex = projects.findIndex(
-                item => item.id === project.id
-            );
-
-            if (projectIndex === -1) {
-                return;
-            }
-
-            const updatedProjects = projects.filter(
-                item => item.id !== project.id
-            );
-
-            if (!saveProjectsArray(updatedProjects)) {
-                return;
-            }
-
-            projects = updatedProjects;
-
-            if (editingId === project.id) {
-                resetForm();
-            }
-
-            renderProjects();
+            await deleteProject(project);
         });
 
-        listItem.appendChild(projectName);
-        listItem.appendChild(projectStatus);
-        listItem.appendChild(document.createTextNode(' '));
-        listItem.appendChild(editButton);
-        listItem.appendChild(document.createTextNode(' '));
-        listItem.appendChild(deleteButton);
+        listItem.append(
+            projectName,
+            projectStatus,
+            document.createTextNode(' '),
+            editButton,
+            document.createTextNode(' '),
+            deleteButton
+        );
 
         projectList.appendChild(listItem);
     });
 
-    if (emptyState) {
-        emptyState.hidden = projects.length > 0;
-    }
+    // Show the empty message only after a successful API load.
+    emptyState.hidden = !(
+        hasLoadedSuccessfully && projects.length === 0
+    );
+
+    updateControls();
 }
 
-function saveProjectsArray(updatedProjects) {
-    try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedProjects));
-        message.textContent = '';
-        return true;
-    } catch (error) {
-        message.textContent =
-            'Changes could not be saved to browser storage. Your saved projects remain unchanged.';
-        return false;
-    }
-}
-
-function resetForm() {
+function resetForm({ clearMessage = true } = {}) {
     form.reset();
 
     editingId = null;
@@ -182,17 +266,16 @@ function resetForm() {
     cancelButton.hidden = true;
     formTitle.textContent = 'Add a Project';
 
-    if (storageReady) {
+    if (clearMessage && hasLoadedSuccessfully) {
         message.textContent = '';
     }
 }
 
-form.addEventListener('submit', event => {
+// Create or update through the API.
+form.addEventListener('submit', async event => {
     event.preventDefault();
 
-    if (!storageReady) {
-        message.textContent =
-            'Projects cannot be changed safely until saved data can be loaded.';
+    if (isBusy || !hasLoadedSuccessfully) {
         return;
     }
 
@@ -205,55 +288,128 @@ form.addEventListener('submit', event => {
         return;
     }
 
-    if (!['Planned', 'In Progress', 'Completed'].includes(status)) {
+    if (name.length > 80) {
+        message.textContent =
+            'Project name must be 80 characters or fewer.';
+        nameInput.focus();
+        return;
+    }
+
+    if (!validStatuses.includes(status)) {
         message.textContent = 'Please select a valid project status.';
         return;
     }
 
-    let updatedProjects;
+    const wasEditing = editingId !== null;
+    const targetId = editingId;
 
-    if (editingId !== null) {
+    if (wasEditing) {
         const projectExists = projects.some(
-            project => project.id === editingId
+            project => project.id === targetId
         );
 
         if (!projectExists) {
             resetForm();
             renderProjects();
+
             message.textContent =
                 'The project being edited no longer exists. Please try again.';
             return;
         }
-
-        updatedProjects = projects.map(project =>
-            project.id === editingId
-                ? { ...project, name, status }
-                : project
-        );
-    } else {
-        const newProject = {
-            id: crypto.randomUUID(),
-            name,
-            status
-        };
-
-        updatedProjects = [...projects, newProject];
     }
 
-    if (!saveProjectsArray(updatedProjects)) {
+    const url = wasEditing
+        ? `/api/projects/${encodeURIComponent(targetId)}`
+        : '/api/projects';
+
+    const method = wasEditing ? 'PUT' : 'POST';
+
+    isBusy = true;
+    updateControls();
+    message.textContent = wasEditing
+        ? 'Saving project changes...'
+        : 'Saving project...';
+
+    try {
+        await apiRequest(url, {
+            method,
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ name, status })
+        });
+
+        // The mutation succeeded. Fetch the latest collection;
+        // don't append a local record or generate an ID in the browser.
+        const successMessage = wasEditing
+            ? 'Project updated successfully.'
+            : 'Project created successfully.';
+
+        resetForm({ clearMessage: false });
+        hasLoadedSuccessfully = false;
+
+        await loadProjects({
+            successMessage,
+            afterMutation: true
+        });
+
+        if (hasLoadedSuccessfully) {
+            nameInput.focus();
+        }
+    } catch (error) {
+        // Keep the user's input and edit mode when the mutation fails.
+        message.textContent = error.message;
+    } finally {
+        isBusy = false;
+        updateControls();
+    }
+});
+
+// Delete through the API.
+async function deleteProject(project) {
+    if (isBusy || !hasLoadedSuccessfully) {
         return;
     }
 
-    projects = updatedProjects;
+    isBusy = true;
+    updateControls();
+    message.textContent = 'Deleting project...';
 
-    resetForm();
-    renderProjects();
-    nameInput.focus();
-});
+    try {
+        await apiRequest(
+            `/api/projects/${encodeURIComponent(project.id)}`,
+            {
+                method: 'DELETE'
+            }
+        );
 
+        // If the deleted record was being edited, leave Edit mode.
+        if (editingId === project.id) {
+            resetForm({ clearMessage: false });
+        }
+
+        hasLoadedSuccessfully = false;
+
+        await loadProjects({
+            successMessage: 'Project deleted successfully.',
+            afterMutation: true
+        });
+    } catch (error) {
+        message.textContent = error.message;
+    } finally {
+        isBusy = false;
+        updateControls();
+    }
+}
+
+// Cancel edit sends no API request.
 cancelButton.addEventListener('click', () => {
+    if (isBusy) {
+        return;
+    }
+
     resetForm();
 });
 
+// Load the database-backed collection when the page opens.
 loadProjects();
-renderProjects();

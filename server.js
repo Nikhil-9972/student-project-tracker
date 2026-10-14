@@ -15,7 +15,7 @@ app.get('/api/health', (req, res) => {
   res.json({ ok: true });
 });
 
-// GET: Retrieve all projects from SQLite
+// GET: Retrieve all projects
 app.get('/api/projects', async (req, res, next) => {
   try {
     const projects = await db.list();
@@ -25,11 +25,10 @@ app.get('/api/projects', async (req, res, next) => {
   }
 });
 
-// POST: Validate and create a project in SQLite
+// POST: Create a project
 app.post('/api/projects', async (req, res, next) => {
   const { name, status } = req.body ?? {};
 
-  // Validate project name
   if (
     typeof name !== 'string' ||
     name.trim() === '' ||
@@ -40,7 +39,6 @@ app.post('/api/projects', async (req, res, next) => {
     });
   }
 
-  // Validate project status
   if (typeof status !== 'string' || !validStatuses.includes(status)) {
     return res.status(400).json({
       error: 'Status must be Planned, In Progress, or Completed.'
@@ -48,18 +46,98 @@ app.post('/api/projects', async (req, res, next) => {
   }
 
   try {
-    const project = await db.create({ name: name.trim(), status });
+    const project = await db.create({
+      name: name.trim(),
+      status
+    });
+
     return res.status(201).json(project);
   } catch (error) {
     return next(error);
   }
 });
 
-// Return JSON for unexpected server/database errors.
+// PUT: Update an existing project
+app.put('/api/projects/:id', async (req, res, next) => {
+  const id = Number(req.params.id);
+  const { name, status } = req.body ?? {};
+
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    return res.status(400).json({
+      error: 'Project ID must be a positive integer.'
+    });
+  }
+
+  if (
+    typeof name !== 'string' ||
+    name.trim() === '' ||
+    name.trim().length > 80
+  ) {
+    return res.status(400).json({
+      error: 'Name must be nonblank and no longer than 80 characters.'
+    });
+  }
+
+  if (typeof status !== 'string' || !validStatuses.includes(status)) {
+    return res.status(400).json({
+      error: 'Status must be Planned, In Progress, or Completed.'
+    });
+  }
+
+  try {
+    const project = await db.update(id, {
+      name: name.trim(),
+      status
+    });
+
+    if (!project) {
+      return res.status(404).json({
+        error: 'Project not found.'
+      });
+    }
+
+    return res.status(200).json(project);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// DELETE: Remove a project
+app.delete('/api/projects/:id', async (req, res, next) => {
+  const id = Number(req.params.id);
+
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    return res.status(400).json({
+      error: 'Project ID must be a positive integer.'
+    });
+  }
+
+  try {
+    const deleted = await db.remove(id);
+
+    if (!deleted) {
+      return res.status(404).json({
+        error: 'Project not found.'
+      });
+    }
+
+    return res.status(200).json({ ok: true, id });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// Handle unexpected server/database errors
 app.use((error, req, res, next) => {
   console.error(error);
-  if (res.headersSent) return next(error);
-  return res.status(500).json({ error: 'Internal server error.' });
+
+  if (res.headersSent) {
+    return next(error);
+  }
+
+  return res.status(500).json({
+    error: 'Internal server error.'
+  });
 });
 
 // Start the server
