@@ -1,14 +1,11 @@
 import express from 'express';
+import { db } from './database.js';
 
 const app = express();
 
 // Middleware
 app.use(express.json({ limit: '10kb' }));
 app.use(express.static('public'));
-
-// Temporary in-memory storage
-const projects = [];
-let nextId = 1;
 
 // Allowed project statuses
 const validStatuses = ['Planned', 'In Progress', 'Completed'];
@@ -18,13 +15,18 @@ app.get('/api/health', (req, res) => {
   res.json({ ok: true });
 });
 
-// GET: Retrieve all projects
-app.get('/api/projects', (req, res) => {
-  res.status(200).json(projects);
+// GET: Retrieve all projects from SQLite
+app.get('/api/projects', async (req, res, next) => {
+  try {
+    const projects = await db.list();
+    return res.status(200).json(projects);
+  } catch (error) {
+    return next(error);
+  }
 });
 
-// POST: Create a new project
-app.post('/api/projects', (req, res) => {
+// POST: Validate and create a project in SQLite
+app.post('/api/projects', async (req, res, next) => {
   const { name, status } = req.body ?? {};
 
   // Validate project name
@@ -39,26 +41,25 @@ app.post('/api/projects', (req, res) => {
   }
 
   // Validate project status
-  if (
-    typeof status !== 'string' ||
-    !validStatuses.includes(status)
-  ) {
+  if (typeof status !== 'string' || !validStatuses.includes(status)) {
     return res.status(400).json({
       error: 'Status must be Planned, In Progress, or Completed.'
     });
   }
 
-  // Create the project only after validation succeeds
-  const project = {
-    id: nextId++,
-    name: name.trim(),
-    status
-  };
+  try {
+    const project = await db.create({ name: name.trim(), status });
+    return res.status(201).json(project);
+  } catch (error) {
+    return next(error);
+  }
+});
 
-  projects.push(project);
-
-  // Return HTTP 201 Created
-  return res.status(201).json(project);
+// Return JSON for unexpected server/database errors.
+app.use((error, req, res, next) => {
+  console.error(error);
+  if (res.headersSent) return next(error);
+  return res.status(500).json({ error: 'Internal server error.' });
 });
 
 // Start the server
