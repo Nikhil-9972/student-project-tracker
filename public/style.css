@@ -1,1 +1,466 @@
+```css
+/* ===== Animated Student Project Tracker ===== */
 
+:root {
+    --purple: #8b5cf6;
+    --blue: #38bdf8;
+    --pink: #f472b6;
+    --ink: #f8fafc;
+    --muted: #cbd5e1;
+    --glass: rgba(255, 255, 255, 0.09);
+    --border: rgba(255, 255, 255, 0.17);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html {
+    min-height: 100%;
+}
+
+body {
+    min-height: 100vh;
+    margin: 0;
+    padding: 48px 24px;
+    overflow-x: hidden;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        sans-serif;
+    line-height: 1.7;
+    color: var(--ink);
+    background: linear-gradient(
+        -45deg,
+        #0f172a,
+        #24104a,
+        #102d50,
+        #3b1647,
+        #111827
+    );
+    background-size: 400% 400%;
+    animation: gradientFlow 18s ease infinite;
+}
+
+@keyframes gradientFlow {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+/* Main content */
+main {
+    position: relative;
+    width: 100%;
+    max-width: 820px;
+    margin: 0 auto;
+    animation: pageEnter 800ms ease both;
+}
+
+@keyframes pageEnter {
+    from {
+        opacity: 0;
+        transform: translateY(24px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Header */
+header {
+    position: relative;
+    margin-bottom: 36px;
+    padding: 20px 4px;
+}
+
+header::before {
+    content: "";
+    display: block;
+    width: 74px;
+    height: 5px;
+    margin-bottom: 22px;
+    border-radius: 99px;
+    background: linear-gradient(90deg, var(--blue), var(--pink));
+    box-shadow: 0 0 20px rgba(56, 189, 248, 0.65);
+    animation: lineGlow 3s ease-in-out infinite alternate;
+}
+
+@keyframes lineGlow {
+    from { width: 54px; opacity: 0.7; }
+    to { width: 110px; opacity: 1; }
+}
+
+h1 {
+    margin: 0 0 14px;
+    font-size: clamp(2.1rem, 6vw, 3.4rem);
+    font-weight: 850;
+    line-height: 1.15;
+    letter-spacing: -1.8px;
+    color: #ffffff;
+    background: linear-gradient(
+        100deg,
+        #ffffff 10%,
+        #a5f3fc 42%,
+        #c4b5fd 68%,
+        #fbcfe8 90%
+    );
+    background-size: 200% auto;
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: titleShimmer 7s linear infinite;
+}
+
+@keyframes titleShimmer {
+    to { background-position: 200% center; }
+}
+
+header p {
+    max-width: 600px;
+    margin: 0;
+    font-size: 1.08rem;
+    color: var(--muted);
+}
+
+/* Glass panels */
+section {
+    position: relative;
+    margin-bottom: 28px;
+    padding: 30px;
+    overflow: hidden;
+    isolation: isolate;
+    background: var(--glass);
+    border: 1px solid var(--border);
+    border-radius: 22px;
+    box-shadow:
+        0 20px 55px rgba(0, 0, 0, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.07);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    transition:
+        transform 300ms ease,
+        border-color 300ms ease,
+        box-shadow 300ms ease;
+    animation: panelEnter 700ms ease both;
+}
+
+section:nth-of-type(1) {
+    animation-delay: 100ms;
+}
+
+section:nth-of-type(2) {
+    animation-delay: 220ms;
+}
+
+@keyframes panelEnter {
+    from {
+        opacity: 0;
+        transform: translateY(22px) scale(0.985);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+section::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    top: -90px;
+    right: -70px;
+    width: 190px;
+    height: 190px;
+    border-radius: 50%;
+    background: rgba(139, 92, 246, 0.16);
+    filter: blur(40px);
+    pointer-events: none;
+    transition: background 300ms ease;
+}
+
+section:hover {
+    transform: translateY(-5px);
+    border-color: rgba(125, 211, 252, 0.45);
+    box-shadow:
+        0 28px 65px rgba(0, 0, 0, 0.27),
+        0 0 28px rgba(139, 92, 246, 0.09);
+}
+
+section:hover::before {
+    background: rgba(56, 189, 248, 0.2);
+}
+
+/* Section headings */
+h2 {
+    margin: 0 0 24px;
+    font-size: 1.45rem;
+    font-weight: 750;
+    letter-spacing: -0.5px;
+    color: #ffffff;
+}
+
+h2::after {
+    content: "";
+    display: block;
+    width: 42px;
+    height: 3px;
+    margin-top: 10px;
+    border-radius: 99px;
+    background: linear-gradient(90deg, var(--blue), var(--purple));
+    transition: width 300ms ease;
+}
+
+section:hover h2::after {
+    width: 82px;
+}
+
+/* Form */
+#project-form > div {
+    margin-bottom: 22px;
+}
+
+label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 0.94rem;
+    font-weight: 700;
+    color: #e2e8f0;
+}
+
+input,
+select {
+    display: block;
+    width: 100%;
+    min-height: 49px;
+    padding: 12px 14px;
+    font: inherit;
+    color: #ffffff;
+    background: rgba(15, 23, 42, 0.58);
+    border: 1px solid rgba(203, 213, 225, 0.25);
+    border-radius: 11px;
+    outline: none;
+    transition:
+        border-color 220ms ease,
+        box-shadow 220ms ease,
+        background 220ms ease,
+        transform 220ms ease;
+}
+
+input::placeholder {
+    color: #94a3b8;
+}
+
+select option {
+    color: #111827;
+    background: #ffffff;
+}
+
+input:hover,
+select:hover {
+    border-color: rgba(125, 211, 252, 0.65);
+    background: rgba(15, 23, 42, 0.78);
+}
+
+input:focus,
+select:focus {
+    background: rgba(15, 23, 42, 0.9);
+    border-color: var(--blue);
+    box-shadow:
+        0 0 0 3px rgba(56, 189, 248, 0.16),
+        0 0 22px rgba(56, 189, 248, 0.1);
+    transform: translateY(-1px);
+}
+
+/* Buttons */
+button {
+    position: relative;
+    min-height: 47px;
+    padding: 11px 21px;
+    overflow: hidden;
+    font: inherit;
+    font-weight: 750;
+    cursor: pointer;
+    border: 1px solid transparent;
+    border-radius: 11px;
+    transition:
+        transform 220ms ease,
+        box-shadow 220ms ease,
+        background 220ms ease;
+}
+
+#save-button {
+    color: #ffffff;
+    background: linear-gradient(110deg, #7c3aed, #4f46e5, #0284c7);
+    background-size: 200% 200%;
+    box-shadow:
+        0 8px 22px rgba(79, 70, 229, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    animation: buttonGradient 6s ease infinite;
+}
+
+@keyframes buttonGradient {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+#save-button::after {
+    content: "";
+    position: absolute;
+    top: -50%;
+    left: -70%;
+    width: 35%;
+    height: 200%;
+    background: rgba(255, 255, 255, 0.2);
+    transform: rotate(25deg);
+    transition: left 500ms ease;
+    pointer-events: none;
+}
+
+#save-button:hover {
+    transform: translateY(-3px) scale(1.02);
+    box-shadow:
+        0 13px 30px rgba(99, 102, 241, 0.4),
+        0 0 24px rgba(56, 189, 248, 0.12);
+}
+
+#save-button:hover::after {
+    left: 140%;
+}
+
+#save-button:active {
+    transform: translateY(0) scale(0.98);
+}
+
+#cancel-button {
+    margin-left: 8px;
+    color: #e2e8f0;
+    background: rgba(255, 255, 255, 0.07);
+    border-color: var(--border);
+}
+
+#cancel-button:hover {
+    background: rgba(255, 255, 255, 0.15);
+    transform: translateY(-2px);
+}
+
+button[hidden] {
+    display: none;
+}
+
+/* Accessible keyboard focus */
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+button:focus-visible {
+    outline: 3px solid #fbbf24;
+    outline-offset: 4px;
+}
+
+/* Messages */
+#message {
+    margin: 18px 0 0;
+    color: #bae6fd;
+    overflow-wrap: anywhere;
+}
+
+#empty-state {
+    margin: 0;
+    padding: 22px 16px;
+    text-align: center;
+    color: #cbd5e1;
+    background: rgba(15, 23, 42, 0.3);
+    border: 1px dashed rgba(203, 213, 225, 0.3);
+    border-radius: 13px;
+    transition:
+        background 250ms ease,
+        border-color 250ms ease;
+}
+
+#empty-state:hover {
+    background: rgba(139, 92, 246, 0.09);
+    border-color: rgba(196, 181, 253, 0.55);
+}
+
+/* Project list: ready for future entries */
+#project-list {
+    margin: 0;
+    padding-left: 24px;
+}
+
+#project-list li {
+    margin-bottom: 12px;
+    padding: 14px 16px;
+    overflow-wrap: anywhere;
+    color: #f1f5f9;
+    background: rgba(255, 255, 255, 0.055);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    transition:
+        transform 220ms ease,
+        background 220ms ease,
+        border-color 220ms ease;
+}
+
+#project-list li:hover {
+    transform: translateX(5px);
+    background: rgba(139, 92, 246, 0.13);
+    border-color: rgba(196, 181, 253, 0.45);
+}
+
+/* Responsive design */
+@media (max-width: 559px) {
+    body {
+        padding: 24px 14px;
+    }
+
+    header {
+        margin-bottom: 24px;
+        padding: 10px 2px;
+    }
+
+    h1 {
+        letter-spacing: -1px;
+    }
+
+    header p {
+        font-size: 1rem;
+    }
+
+    section {
+        margin-bottom: 20px;
+        padding: 22px 17px;
+        border-radius: 17px;
+    }
+
+    h2 {
+        font-size: 1.25rem;
+    }
+
+    #cancel-button {
+        margin-left: 4px;
+    }
+}
+
+/* Avoid motion for users who request reduced motion */
+@media (prefers-reduced-motion: reduce) {
+    html {
+        scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+        animation: none !important;
+        transition: none !important;
+    }
+
+    section:hover,
+    #save-button:hover,
+    #save-button:active,
+    #cancel-button:hover,
+    #project-list li:hover {
+        transform: none;
+    }
+}
+```
