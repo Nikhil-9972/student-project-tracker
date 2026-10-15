@@ -3,22 +3,26 @@ import { db } from './database.js';
 
 const app = express();
 
+const validStatuses = [
+  'Planned',
+  'In Progress',
+  'Completed'
+];
+
 // Middleware
 app.use(express.json({ limit: '10kb' }));
 app.use(express.static('public'));
 
-// Allowed project statuses
-const validStatuses = ['Planned', 'In Progress', 'Completed'];
-
-// Health-check API
+// Health check
 app.get('/api/health', (req, res) => {
-  res.json({ ok: true });
+  res.status(200).json({ ok: true });
 });
 
-// GET: Retrieve all projects
+// GET: Return every project
 app.get('/api/projects', async (req, res, next) => {
   try {
     const projects = await db.list();
+
     return res.status(200).json(projects);
   } catch (error) {
     return next(error);
@@ -39,7 +43,10 @@ app.post('/api/projects', async (req, res, next) => {
     });
   }
 
-  if (typeof status !== 'string' || !validStatuses.includes(status)) {
+  if (
+    typeof status !== 'string' ||
+    !validStatuses.includes(status)
+  ) {
     return res.status(400).json({
       error: 'Status must be Planned, In Progress, or Completed.'
     });
@@ -78,7 +85,10 @@ app.put('/api/projects/:id', async (req, res, next) => {
     });
   }
 
-  if (typeof status !== 'string' || !validStatuses.includes(status)) {
+  if (
+    typeof status !== 'string' ||
+    !validStatuses.includes(status)
+  ) {
     return res.status(400).json({
       error: 'Status must be Planned, In Progress, or Completed.'
     });
@@ -121,19 +131,30 @@ app.delete('/api/projects/:id', async (req, res, next) => {
       });
     }
 
-    return res.status(200).json({ ok: true, id });
+    return res.status(200).json({
+      ok: true,
+      id
+    });
   } catch (error) {
     return next(error);
   }
 });
 
-// Handle unexpected server/database errors
+// Handle invalid JSON and unexpected errors.
+// This must remain after the routes.
 app.use((error, req, res, next) => {
-  console.error(error);
-
   if (res.headersSent) {
     return next(error);
   }
+
+  // express.json() marks malformed JSON with this error type.
+  if (error?.type === 'entity.parse.failed') {
+    return res.status(400).json({
+      error: 'Invalid JSON request body.'
+    });
+  }
+
+  console.error(error);
 
   return res.status(500).json({
     error: 'Internal server error.'

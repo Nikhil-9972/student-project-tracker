@@ -8,12 +8,17 @@ const cancelButton = document.querySelector('#cancel-button');
 const formTitle = document.querySelector('#form-title');
 const message = document.querySelector('#message');
 
+const validStatuses = ['Planned', 'In Progress', 'Completed'];
+
 let projects = [];
 let editingId = null;
-let isBusy = false;
+let isLoading = false;
+let isMutating = false;
 let hasLoadedSuccessfully = false;
 
-const validStatuses = ['Planned', 'In Progress', 'Completed'];
+function sameId(first, second) {
+    return String(first) === String(second);
+}
 
 // Validate the collection returned by the API.
 function isValidProjects(value) {
@@ -61,29 +66,32 @@ function isValidProjects(value) {
     });
 }
 
-// Read a useful error message from an unsuccessful API response.
+// Extract a useful API error message.
 async function getApiErrorMessage(response) {
     try {
         const data = await response.json();
 
-        if (typeof data.error === 'string' && data.error.trim()) {
+        if (
+            typeof data.error === 'string' &&
+            data.error.trim() !== ''
+        ) {
             return data.error;
         }
 
-        if (typeof data.message === 'string' && data.message.trim()) {
+        if (
+            typeof data.message === 'string' &&
+            data.message.trim() !== ''
+        ) {
             return data.message;
         }
     } catch {
         // The response may not contain JSON.
     }
 
-    return `Request failed (${response.status}${response.statusText
-        ? ` ${response.statusText}`
-        : ''
-        }).`;
+    return `Request failed with HTTP ${response.status}.`;
 }
 
-// Send a request and check the HTTP response.
+// Send an API request and check response.ok.
 async function apiRequest(url, options = {}) {
     let response;
 
@@ -91,7 +99,7 @@ async function apiRequest(url, options = {}) {
         response = await fetch(url, options);
     } catch {
         throw new Error(
-            'Could not connect to the server. Check that your Express server is running and try again.'
+            'Could not connect to the server. Check that it is running and try again.'
         );
     }
 
@@ -102,86 +110,21 @@ async function apiRequest(url, options = {}) {
     return response;
 }
 
-// Disable editing controls while loading or saving.
+// Disable controls while loading or saving.
 function updateControls() {
-    const disabled = isBusy || !hasLoadedSuccessfully;
+    const pending = isLoading || isMutating;
 
-    nameInput.disabled = disabled;
-    statusInput.disabled = disabled;
-    saveButton.disabled = disabled;
-    cancelButton.disabled = isBusy;
+    nameInput.disabled = pending;
+    statusInput.disabled = pending;
+    saveButton.disabled = pending || !hasLoadedSuccessfully;
+    cancelButton.disabled = pending;
 
     projectList.querySelectorAll('button').forEach(button => {
-        button.disabled = disabled;
+        button.disabled = pending || !hasLoadedSuccessfully;
     });
 }
 
-// Load the latest collection from the API.
-// A failed load is never treated as an empty collection.
-async function loadProjects({
-    successMessage = '',
-    afterMutation = false
-} = {}) {
-    hasLoadedSuccessfully = false;
-    isBusy = true;
-
-    updateControls();
-    emptyState.hidden = true;
-
-    message.textContent = afterMutation
-        ? 'Refreshing projects...'
-        : 'Loading projects...';
-
-    try {
-        const response = await apiRequest('/api/projects');
-
-        let data;
-
-        try {
-            data = await response.json();
-        } catch {
-            throw new Error('The server returned an invalid JSON response.');
-        }
-
-        if (!isValidProjects(data)) {
-            throw new Error(
-                'The server returned an invalid project list. Please check the API response.'
-            );
-        }
-
-        // Use the server collection as the source of truth.
-        projects = data;
-        hasLoadedSuccessfully = true;
-
-        renderProjects();
-
-        if (successMessage) {
-            message.textContent = successMessage;
-        } else if (projects.length > 0) {
-            message.textContent = 'Projects loaded successfully.';
-        } else {
-            message.textContent = '';
-        }
-    } catch (error) {
-        // Do not show the empty state when loading failed.
-        hasLoadedSuccessfully = false;
-        emptyState.hidden = true;
-
-        if (afterMutation) {
-            message.textContent =
-                `${successMessage} However, the project list could not be refreshed. ` +
-                error.message;
-        } else {
-            message.textContent =
-                `Could not load projects. ${error.message}`;
-        }
-    } finally {
-        isBusy = false;
-        updateControls();
-    }
-}
-
-// Render API records safely using textContent.
+// Render the API collection safely.
 function renderProjects() {
     projectList.replaceChildren();
 
@@ -192,6 +135,7 @@ function renderProjects() {
         const editButton = document.createElement('button');
         const deleteButton = document.createElement('button');
 
+        // Never interpret an entered project name as HTML.
         projectName.textContent = project.name;
         projectStatus.textContent = ` — ${project.status}`;
 
@@ -199,13 +143,15 @@ function renderProjects() {
         editButton.textContent = 'Edit';
 
         editButton.addEventListener('click', () => {
-            if (isBusy || !hasLoadedSuccessfully) {
+            if (
+                isLoading ||
+                isMutating ||
+                !hasLoadedSuccessfully
+            ) {
                 return;
             }
 
-            // Keep the ID returned by the server.
             editingId = project.id;
-
             nameInput.value = project.name;
             statusInput.value = project.status;
 
@@ -221,7 +167,11 @@ function renderProjects() {
         deleteButton.textContent = 'Delete';
 
         deleteButton.addEventListener('click', async () => {
-            if (isBusy || !hasLoadedSuccessfully) {
+            if (
+                isLoading ||
+                isMutating ||
+                !hasLoadedSuccessfully
+            ) {
                 return;
             }
 
@@ -229,7 +179,7 @@ function renderProjects() {
                 `Are you sure you want to delete "${project.name}"?`
             );
 
-            // Cancelled deletion sends no request.
+            // Cancellation must not send a DELETE request.
             if (!confirmed) {
                 return;
             }
@@ -249,7 +199,7 @@ function renderProjects() {
         projectList.appendChild(listItem);
     });
 
-    // Show the empty message only after a successful API load.
+    // Only a successfully loaded empty collection is empty.
     emptyState.hidden = !(
         hasLoadedSuccessfully && projects.length === 0
     );
@@ -257,6 +207,70 @@ function renderProjects() {
     updateControls();
 }
 
+// Load projects from the server.
+async function loadProjects({
+    successMessage = '',
+    mutationSucceeded = false
+} = {}) {
+    isLoading = true;
+    updateControls();
+
+    emptyState.hidden = true;
+    message.textContent = 'Loading projects...';
+
+    try {
+        const response = await apiRequest('/api/projects');
+
+        let data;
+
+        try {
+            data = await response.json();
+        } catch {
+            throw new Error(
+                'The server returned an invalid JSON response.'
+            );
+        }
+
+        if (!isValidProjects(data)) {
+            throw new Error(
+                'The server returned an invalid project list.'
+            );
+        }
+
+        projects = data;
+        hasLoadedSuccessfully = true;
+
+        renderProjects();
+
+        if (successMessage) {
+            message.textContent = successMessage;
+        } else if (projects.length === 0) {
+            message.textContent = 'No projects yet.';
+        } else {
+            message.textContent = 'Projects loaded successfully.';
+        }
+
+        return true;
+    } catch (error) {
+        hasLoadedSuccessfully = false;
+        emptyState.hidden = true;
+
+        if (mutationSucceeded) {
+            message.textContent =
+                `${successMessage} However, the project list could not be refreshed. ${error.message}`;
+        } else {
+            message.textContent =
+                `Could not load projects. ${error.message}`;
+        }
+
+        return false;
+    } finally {
+        isLoading = false;
+        updateControls();
+    }
+}
+
+// Return the form to Add mode.
 function resetForm({ clearMessage = true } = {}) {
     form.reset();
 
@@ -266,21 +280,30 @@ function resetForm({ clearMessage = true } = {}) {
     cancelButton.hidden = true;
     formTitle.textContent = 'Add a Project';
 
-    if (clearMessage && hasLoadedSuccessfully) {
+    if (clearMessage) {
         message.textContent = '';
     }
 }
 
-// Create or update through the API.
+// One submit listener handles both POST and PUT.
 form.addEventListener('submit', async event => {
     event.preventDefault();
 
-    if (isBusy || !hasLoadedSuccessfully) {
+    // Prevent repeated submissions.
+    if (isLoading || isMutating) {
         return;
     }
 
     const name = nameInput.value.trim();
     const status = statusInput.value;
+    const targetId = editingId;
+    const isEditing = targetId !== null;
+
+    if (!hasLoadedSuccessfully) {
+        message.textContent =
+            'Projects could not be loaded. Please reload the project list before saving.';
+        return;
+    }
 
     if (name === '') {
         message.textContent = 'Please enter a project name.';
@@ -300,17 +323,13 @@ form.addEventListener('submit', async event => {
         return;
     }
 
-    const wasEditing = editingId !== null;
-    const targetId = editingId;
-
-    if (wasEditing) {
+    if (isEditing) {
         const projectExists = projects.some(
-            project => project.id === targetId
+            project => sameId(project.id, targetId)
         );
 
         if (!projectExists) {
             resetForm();
-            renderProjects();
 
             message.textContent =
                 'The project being edited no longer exists. Please try again.';
@@ -318,15 +337,16 @@ form.addEventListener('submit', async event => {
         }
     }
 
-    const url = wasEditing
+    const url = isEditing
         ? `/api/projects/${encodeURIComponent(targetId)}`
         : '/api/projects';
 
-    const method = wasEditing ? 'PUT' : 'POST';
+    const method = isEditing ? 'PUT' : 'POST';
 
-    isBusy = true;
+    isMutating = true;
     updateControls();
-    message.textContent = wasEditing
+
+    message.textContent = isEditing
         ? 'Saving project changes...'
         : 'Saving project...';
 
@@ -339,40 +359,43 @@ form.addEventListener('submit', async event => {
             body: JSON.stringify({ name, status })
         });
 
-        // The mutation succeeded. Fetch the latest collection;
-        // don't append a local record or generate an ID in the browser.
-        const successMessage = wasEditing
+        // Clear the form only after the mutation succeeds.
+        resetForm({ clearMessage: false });
+
+        const successText = isEditing
             ? 'Project updated successfully.'
             : 'Project created successfully.';
 
-        resetForm({ clearMessage: false });
-        hasLoadedSuccessfully = false;
-
         await loadProjects({
-            successMessage,
-            afterMutation: true
+            successMessage: successText,
+            mutationSucceeded: true
         });
 
         if (hasLoadedSuccessfully) {
             nameInput.focus();
         }
     } catch (error) {
-        // Keep the user's input and edit mode when the mutation fails.
+        // Preserve the entered name, status and Edit mode.
         message.textContent = error.message;
     } finally {
-        isBusy = false;
+        isMutating = false;
         updateControls();
     }
 });
 
-// Delete through the API.
+// Delete a project through the API.
 async function deleteProject(project) {
-    if (isBusy || !hasLoadedSuccessfully) {
+    if (
+        isLoading ||
+        isMutating ||
+        !hasLoadedSuccessfully
+    ) {
         return;
     }
 
-    isBusy = true;
+    isMutating = true;
     updateControls();
+
     message.textContent = 'Deleting project...';
 
     try {
@@ -383,33 +406,34 @@ async function deleteProject(project) {
             }
         );
 
-        // If the deleted record was being edited, leave Edit mode.
-        if (editingId === project.id) {
+        // If the edited record was deleted, exit Edit mode.
+        if (
+            editingId !== null &&
+            sameId(editingId, project.id)
+        ) {
             resetForm({ clearMessage: false });
         }
 
-        hasLoadedSuccessfully = false;
-
         await loadProjects({
             successMessage: 'Project deleted successfully.',
-            afterMutation: true
+            mutationSucceeded: true
         });
     } catch (error) {
         message.textContent = error.message;
     } finally {
-        isBusy = false;
+        isMutating = false;
         updateControls();
     }
 }
 
-// Cancel edit sends no API request.
+// Cancel Edit without contacting the API.
 cancelButton.addEventListener('click', () => {
-    if (isBusy) {
+    if (isLoading || isMutating) {
         return;
     }
 
     resetForm();
 });
 
-// Load the database-backed collection when the page opens.
+// Load the API collection on page startup.
 loadProjects();
